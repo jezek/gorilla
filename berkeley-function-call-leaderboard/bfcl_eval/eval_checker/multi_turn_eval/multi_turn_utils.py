@@ -78,12 +78,17 @@ def execute_multi_turn_func_call(
             class_method_name_mapping[method_name] = instance_name
 
     execution_results = []
-    for func_call in func_call_list:
+    structured_calls = getattr(func_call_list, "structured_calls", None)
+    for index, func_call in enumerate(func_call_list):
         # Add the instance name to the method calls
         func_call = _process_method_calls(func_call, class_method_name_mapping)
 
         # Evaluate the function call
         try:
+            structured_call = None
+            if structured_calls is not None and index < len(structured_calls):
+                structured_call = structured_calls[index]
+
             # We need to make a copy here because otherwise the `eval(func_call)` would error. 
             func_call_copy = func_call
             # Before calling `eval`, we need to make sure that the function call is safe
@@ -97,7 +102,14 @@ def execute_multi_turn_func_call(
             if func_call_copy in ["kill", "exit", "quit", "remove", "unlink", "popen", "Popen", "run"]:
                 raise Exception(f"Function call {func_call_copy} is not allowed.")
 
-            func_call_result = eval(func_call)
+            if structured_call is not None:
+                func_call_result = _execute_structured_call(
+                    structured_call,
+                    involved_instances,
+                    class_method_name_mapping,
+                )
+            else:
+                func_call_result = eval(func_call)
 
             if type(func_call_result) == str:
                 pass
@@ -112,7 +124,9 @@ def execute_multi_turn_func_call(
 
             execution_results.append(func_call_result)
         except Exception as e:
-            execution_results.append(f"Error during execution: {str(e)}")
+            execution_results.append(
+                f"Error during execution: {str(e)} | func_call={func_call}"
+            )
 
     return execution_results, involved_instances
 
@@ -161,3 +175,58 @@ def _process_method_calls(function_call_string: str, instance_mapping: dict) -> 
     processed_string = re.sub(pattern, replace_function, function_call_string)
 
     return processed_string
+
+
+def _looks_like_nested_function_call(value, instance_mapping: dict) -> bool:
+    return (
+        isinstance(value, dict)
+        and len(value) == 1
+        and next(iter(value)) in instance_mapping
+        and isinstance(next(iter(value.values())), dict)
+    )
+
+
+def _resolve_structured_argument(
+    value, involved_instances: dict, instance_mapping: dict
+):
+    if _looks_like_nested_function_call(value, instance_mapping):
+        return _execute_structured_call(value, involved_instances, instance_mapping)
+    if isinstance(value, dict):
+        return {
+            key: _resolve_structured_argument(item, involved_instances, instance_mapping)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _resolve_structured_argument(item, involved_instances, instance_mapping)
+            for item in value
+        ]
+    if isinstance(value, tuple):
+        return tuple(
+            _resolve_structured_argument(item, involved_instances, instance_mapping)
+            for item in value
+        )
+    return value
+
+
+def _execute_structured_call(
+    structured_call: dict, involved_instances: dict, instance_mapping: dict
+):
+    if len(structured_call) != 1:
+        raise ValueError(f"Malformed structured call: {structured_call}")
+
+    method_name, raw_kwargs = next(iter(structured_call.items()))
+    if method_name in ["kill", "exit", "quit", "remove", "unlink", "popen", "Popen", "run"]:
+        raise Exception(f"Function call {method_name} is not allowed.")
+    if method_name not in instance_mapping:
+        raise ValueError(f"Unknown function '{method_name}' in structured call.")
+
+    instance_name = instance_mapping[method_name]
+    class_instance = globals()[instance_name]
+    resolved_kwargs = {
+        key: _resolve_structured_argument(value, involved_instances, instance_mapping)
+        for key, value in raw_kwargs.items()
+    }
+
+    method = getattr(class_instance, method_name)
+    return method(**resolved_kwargs)

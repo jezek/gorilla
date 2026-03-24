@@ -492,7 +492,14 @@ def default_decode_execute_prompting(
     decoded_output = ast_parse(
         result, language=ReturnFormat.PYTHON, has_tool_call_tag=has_tool_call_tag
     )
-    return decoded_output_to_execution_list(decoded_output)
+    rendered_output = decoded_output_to_execution_list(decoded_output)
+
+    class DecodedExecutionList(list):
+        pass
+
+    output = DecodedExecutionList(rendered_output)
+    output.structured_calls = decoded_output
+    return output
 
 
 def parse_nested_value(value):
