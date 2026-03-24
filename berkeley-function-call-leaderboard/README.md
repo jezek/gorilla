@@ -139,9 +139,16 @@ If you are running any proprietary models, make sure the model API keys are incl
 
 The library looks for the `.env` file in the project root, i.e. `$BFCL_PROJECT_ROOT/.env`.
 
-#### Configuring SerpAPI for Web Search Category
+#### Configuring Providers for Web Search Category
 
-For the `web_search` test category, we use the [SerpAPI](https://serpapi.com/) service to perform web search. You need to sign up for an API key and add it to your `.env` file. You can also switch to other web search APIs by changing the `search_engine_query` function in `bfcl_eval/eval_checker/multi_turn_eval/func_source_code/web_search.py`.
+For the `web_search` test category, BFCL tries providers in this order:
+1. [SerpAPI](https://serpapi.com/)
+2. [Brave Search API](https://brave.com/search/api/)
+3. DuckDuckGo HTML search as a last-resort fallback
+
+For the more reliable API-backed providers, add `SERPAPI_API_KEY` and/or `BRAVE_SEARCH_API_KEY` to your `.env` file. If neither API key is configured or both providers fail, BFCL falls back to DuckDuckGo HTML and logs the provider transitions to stdout during the run.
+
+For `fetch_url_content()`, BFCL first does a direct HTTP fetch. If that fails with likely anti-bot or delivery issues such as timeout, `403`, `429`, `5xx`, or a detected challenge page, BFCL can selectively fall back to Cloudflare Browser Rendering when `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are configured. The fetch backend transitions are also logged to stdout during the run.
 
 ---
 
