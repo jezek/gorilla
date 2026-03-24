@@ -144,7 +144,11 @@ def collect_test_cases(args, model_name, all_test_categories, all_test_entries_i
 
         if is_memory(test_category):
             # We also need to special handle the pre-requisite entries and the snapshot result for memory test cases
-            snapshot_folder = model_result_dir / "memory_snapshot" / test_category
+            snapshot_folder = (
+                model_result_dir
+                / get_directory_structure_by_category(test_category)
+                / "memory_snapshot"
+            )
             if snapshot_folder.exists():
                 if not args.allow_overwrite:
                     pass

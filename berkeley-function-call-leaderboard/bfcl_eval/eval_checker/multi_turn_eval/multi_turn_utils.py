@@ -10,6 +10,25 @@ from bfcl_eval.constants.executable_backend_config import (
 )
 
 
+def _build_runtime_instance_name(
+    model_name: str, test_entry_id: str, class_name: str, is_eval_run: bool = False
+) -> str:
+    """
+    Build a deterministic runtime instance name that is safe to reference from ``eval``.
+    """
+    if is_eval_run:
+        model_name += "_eval"
+
+    instance_name = f"{model_name}_{test_entry_id}_{class_name}_instance"
+    # ``eval`` requires a valid Python identifier here. Ollama model names often contain
+    # ``:`` and other punctuation, so normalise everything outside ``[A-Za-z0-9_]``.
+    instance_name = re.sub(r"\W", "_", instance_name)
+    if not instance_name or not re.match(r"[A-Za-z_]", instance_name[0]):
+        instance_name = f"instance_{instance_name}"
+
+    return instance_name
+
+
 def execute_multi_turn_func_call(
     func_call_list: list[str],  # a list of strings of func calls
     initial_config: dict,
@@ -22,18 +41,16 @@ def execute_multi_turn_func_call(
     """
     TODO: Add docstring
     """
-    if is_evaL_run:
-        model_name += "_eval"
-
     class_method_name_mapping = {}
     involved_instances = {}
     for class_name in involved_classes:
         module_name = CLASS_FILE_PATH_MAPPING[class_name]
-        # TODO: Handler the model name issue from handler more elegantly
-        instance_name = (
-            f"{model_name}_{test_entry_id}_{class_name}_instance"
+        instance_name = _build_runtime_instance_name(
+            model_name=model_name,
+            test_entry_id=test_entry_id,
+            class_name=class_name,
+            is_eval_run=is_evaL_run,
         )
-        instance_name = re.sub(r'[-./]', '_', instance_name)
         if instance_name not in globals():
             module = importlib.import_module(module_name)
             class_ = getattr(module, class_name)
