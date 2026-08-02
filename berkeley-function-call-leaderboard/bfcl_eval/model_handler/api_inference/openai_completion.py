@@ -18,6 +18,21 @@ from bfcl_eval.model_handler.utils import (
 from openai import OpenAI, RateLimitError
 
 
+def _integer_from_env(name: str, minimum: int) -> int | None:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer, got {value!r}.") from exc
+    if parsed < minimum:
+        raise ValueError(
+            f"{name} must be at least {minimum}, got {parsed}."
+        )
+    return parsed
+
+
 class OpenAICompletionsHandler(BaseHandler):
     def __init__(
         self,
@@ -46,6 +61,14 @@ class OpenAICompletionsHandler(BaseHandler):
 
         if headers_env := os.getenv("OPENAI_DEFAULT_HEADERS"):
             kwargs["default_headers"] = json.loads(headers_env)
+
+        timeout = _integer_from_env("BFCL_TIMEOUT_SECONDS", 1)
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+
+        max_retries = _integer_from_env("BFCL_MAX_RETRIES", 0)
+        if max_retries is not None:
+            kwargs["max_retries"] = max_retries
 
         return kwargs
 
@@ -87,6 +110,10 @@ class OpenAICompletionsHandler(BaseHandler):
             "temperature": self.temperature,
             "store": False,
         }
+
+        max_tokens = _integer_from_env("BFCL_MAX_TOKENS", 1)
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
 
         if len(tools) > 0:
             kwargs["tools"] = tools
@@ -218,12 +245,17 @@ class OpenAICompletionsHandler(BaseHandler):
     def _query_prompting(self, inference_data: dict):
         inference_data["inference_input_log"] = {"message": repr(inference_data["message"])}
 
-        return self.generate_with_backoff(
-            messages=inference_data["message"],
-            model=self.model_name,
-            temperature=self.temperature,
-            store=False,
-        )
+        kwargs = {
+            "messages": inference_data["message"],
+            "model": self.model_name,
+            "temperature": self.temperature,
+            "store": False,
+        }
+        max_tokens = _integer_from_env("BFCL_MAX_TOKENS", 1)
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+
+        return self.generate_with_backoff(**kwargs)
 
     def _pre_query_processing_prompting(self, test_entry: dict) -> dict:
         functions: list = test_entry["function"]
